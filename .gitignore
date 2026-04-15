@@ -8,7 +8,7 @@ coverage/
 .idea/
 .vscode/
 *.suo
-
+FRONTEND_ROUTES.md
 *.ntvs*
 *.njsproj
 *.sln
@@ -48,3 +48,4 @@ coverage/
 *.db
 *.sqlite3
 *.bak
+.vercel
