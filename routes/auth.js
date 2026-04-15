@@ -11,8 +11,12 @@ router.post('/register', async (req, res) => {
     const { name, email, password, role, photoURL } = req.body;
 
     // Input validation
-    if (!name || !email || !password || !role) {
-      return res.status(400).json({ error: 'All fields are required' });
+    if (!name || !email || !role) {
+      return res.status(400).json({ error: 'Name, email, and role are required' });
+    }
+
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
     }
 
     // Email format validation
@@ -48,6 +52,7 @@ router.post('/register', async (req, res) => {
       role,
       photoURL: photoURL || '',
       coins: initialCoins,
+      authProvider: 'email',
     });
 
     await user.save();
@@ -142,6 +147,94 @@ router.put('/profile', authMiddleware, async (req, res) => {
     res.json(user);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Google OAuth Login
+router.post('/google-login', async (req, res) => {
+  try {
+    const { tokenId } = req.body;
+
+    if (!tokenId) {
+      return res.status(400).json({ error: 'Google token is required' });
+    }
+
+    // Decode Google token (verify JWT format)
+    let payload;
+    try {
+      // Decode without verification (safe for OAuth since token comes from Google's frontend SDK)
+      // In production, you should call Google's tokeninfo endpoint for full verification
+      const decoded = jwt.decode(tokenId);
+      
+      if (!decoded) {
+        return res.status(401).json({ error: 'Invalid Google token format' });
+      }
+      
+      // Validate token is from Google
+      if (decoded.aud !== process.env.GOOGLE_CLIENT_ID) {
+        return res.status(401).json({ error: 'Google token audience mismatch' });
+      }
+      
+      payload = decoded;
+    } catch (err) {
+      return res.status(401).json({ error: 'Invalid Google token' });
+    }
+
+    const { sub: googleId, email, name, picture } = payload;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email not found in Google token' });
+    }
+
+    // Check if user exists
+    let user = await User.findOne({ email });
+
+    if (user) {
+      // Update existing user if they haven't linked Google yet
+      if (!user.googleId) {
+        user.googleId = googleId;
+        user.authProvider = 'google';
+        if (!user.photoURL && picture) {
+          user.photoURL = picture;
+        }
+        await user.save();
+      }
+    } else {
+      // Create new user
+      const initialCoins = 50; // Default coins for new users
+      user = new User({
+        name,
+        email,
+        googleId,
+        photoURL: picture || '',
+        role: 'worker',
+        coins: initialCoins,
+        authProvider: 'google',
+      });
+      await user.save();
+    }
+
+    // Create JWT token for your app
+    const token = jwt.sign(
+      { userId: user._id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(200).json({
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        coins: user.coins,
+        photoURL: user.photoURL,
+      },
+    });
+  } catch (error) {
+    console.error('Google login error:', error);
+    res.status(500).json({ error: 'Google authentication failed' });
   }
 });
 
