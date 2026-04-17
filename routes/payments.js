@@ -1,10 +1,12 @@
 const express = require('express');
 const router = express.Router();
+// const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // uncomment with key
+const stripe = null; // dummy mode
 const Payment = require('../models/Payment');
 const User = require('../models/User');
 const { authMiddleware, authorize } = require('../middleware/auth');
 
-// Coin packages
+// Coin packages matching spec: 10 coins = $1 etc.
 const coinPackages = {
   '10': 1,
   '150': 10,
@@ -25,112 +27,90 @@ router.get('/packages', (req, res) => {
   }
 });
 
-// Create payment intent for Stripe (Buyer)
-router.post('/create-payment', authMiddleware, authorize('buyer'), async (req, res) => {
+// Client calls this for purchaseCoins
+router.post('/purchase-coins', authMiddleware, authorize('buyer'), async (req, res) => {
   try {
-    const { coins } = req.body;
+    const { amount, coins, paymentMethodId } = req.body;
 
-    if (!coins || !coinPackages[coins]) {
-      return res.status(400).json({ error: 'Invalid coin package' });
-    }
+    console.log('Payment request:', { amount, coins, paymentMethodId });
 
-    const price = coinPackages[coins];
+    // Dummy success (no Stripe key needed)
     const buyer = await User.findById(req.user.userId);
+    if (!buyer) return res.status(404).json({ error: 'User not found' });
 
-    const payment = new Payment({
-      buyer_email: buyer.email,
-      buyer_name: buyer.name,
-      coin_amount: coins,
-      price,
-      status: 'pending',
-    });
-
-    await payment.save();
-
-    // In a real scenario, this would integrate with Stripe API
-    // For now, we'll return payment details for the client to handle
-    res.status(201).json({
-      message: 'Payment object created',
-      payment: {
-        _id: payment._id,
-        coin_amount: payment.coin_amount,
-        price: payment.price,
-        currency: 'USD',
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Confirm payment (webhook or client callback)
-router.put('/confirm/:paymentId', authMiddleware, authorize('buyer'), async (req, res) => {
-  try {
-    const { transactionId } = req.body;
-
-    if (!transactionId) {
-      return res.status(400).json({ error: 'Transaction ID required' });
-    }
-
-    const payment = await Payment.findById(req.params.paymentId);
-
-    if (!payment) {
-      return res.status(404).json({ error: 'Payment not found' });
-    }
-
-    if (payment.buyer_email !== req.user.email) {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
-
-    payment.status = 'completed';
-    payment.transaction_id = transactionId;
-    payment.payment_date = new Date();
-    await payment.save();
-
-    // Add coins to buyer
-    const buyer = await User.findById(req.user.userId);
-    buyer.coins += payment.coin_amount;
+    buyer.coins += parseInt(coins);
     await buyer.save();
 
-    res.json({
-      message: 'Payment completed successfully',
-      payment,
+    res.json({ 
+      success: true,
+      coinsAdded: parseInt(coins),
       newBalance: buyer.coins,
+      message: 'Coins added successfully!'
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Purchase error:', error);
+    res.status(400).json({ error: error.message });
   }
 });
 
-// Dummy payment endpoint (for testing without Stripe)
+// Stripe Webhook for payment succeeded
+router.post('/webhook', express.raw({type: 'application/json'}), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET || 'whsec_test');
+  } catch (err) {
+    console.error(`Webhook signature failed: ${err.message}`);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (event.type === 'payment_intent.succeeded') {
+    const paymentIntent = event.data.object;
+    const paymentId = paymentIntent.metadata.paymentId;
+    const userId = paymentIntent.metadata.userId;
+    const coins = parseInt(paymentIntent.metadata.coins);
+
+    const payment = await Payment.findById(paymentId);
+    if (payment && payment.status === 'pending') {
+      payment.status = 'completed';
+      payment.transaction_id = paymentIntent.id;
+      await payment.save();
+
+      const buyer = await User.findById(userId);
+      if (buyer) {
+        buyer.coins += coins;
+        await buyer.save();
+        console.log(`Added ${coins} coins to ${buyer.email}`);
+      }
+    }
+  }
+
+  res.json({received: true});
+});
+
+// Dummy payment for testing
 router.post('/dummy-payment', authMiddleware, authorize('buyer'), async (req, res) => {
   try {
     const { coins } = req.body;
-
-    if (!coins || !coinPackages[coins]) {
-      return res.status(400).json({ error: 'Invalid coin package' });
-    }
+    if (!coinPackages[coins]) return res.status(400).json({ error: 'Invalid package' });
 
     const buyer = await User.findById(req.user.userId);
-    const price = coinPackages[coins];
-
     const payment = new Payment({
       buyer_email: buyer.email,
       buyer_name: buyer.name,
       coin_amount: coins,
-      price,
+      price: coinPackages[coins],
       transaction_id: `dummy_${Date.now()}`,
       status: 'completed',
     });
-
     await payment.save();
 
     buyer.coins += coins;
     await buyer.save();
 
     res.json({
-      message: 'Payment completed successfully',
-      payment,
+      message: 'Dummy payment success',
       newBalance: buyer.coins,
     });
   } catch (error) {
@@ -138,26 +118,12 @@ router.post('/dummy-payment', authMiddleware, authorize('buyer'), async (req, re
   }
 });
 
-// Get payment history (Buyer)
+// Get payment history
 router.get('/history', authMiddleware, authorize('buyer'), async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
-    const skip = (page - 1) * limit;
-
     const buyer = await User.findById(req.user.userId);
-    const payments = await Payment.find({ buyer_email: buyer.email })
-      .sort('-payment_date')
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const total = await Payment.countDocuments({ buyer_email: buyer.email });
-
-    res.json({
-      payments,
-      total,
-      pages: Math.ceil(total / limit),
-      currentPage: page,
-    });
+    const payments = await Payment.find({ buyer_email: buyer.email }).sort('-createdAt');
+    res.json({ payments });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -4,26 +4,35 @@ const Task = require('../models/Task');
 const User = require('../models/User');
 const { authMiddleware, authorize } = require('../middleware/auth');
 
-// Get all available tasks (for workers)
+
 router.get('/', async (req, res) => {
   try {
     const { page = 1, limit = 10, sortBy = '-createdAt' } = req.query;
     const skip = (page - 1) * limit;
 
-    const tasks = await Task.find({
+    let taskQuery = {
       required_workers: { $gt: 0 },
       status: 'active',
       completion_date: { $gt: new Date() },
-    })
+    };
+
+    // Exclude tasks worker already submitted
+    if (req.user) {
+      const workerSubmissions = await Submission.find({ worker_email: req.user.email }).select('task_id');
+      const submittedTaskIds = workerSubmissions.map(s => s.task_id);
+      taskQuery._id = { $nin: submittedTaskIds };
+    }
+
+    const tasks = await Task.find(taskQuery)
       .sort(sortBy)
       .skip(skip)
       .limit(parseInt(limit));
 
-    const total = await Task.countDocuments({
-      required_workers: { $gt: 0 },
-      status: 'active',
-      completion_date: { $gt: new Date() },
-    });
+    const totalQuery = { ...taskQuery };
+    if (req.user) {
+      totalQuery._id = { $nin: submittedTaskIds };
+    }
+    const total = await Task.countDocuments(totalQuery);
 
     res.json({
       tasks,
@@ -32,6 +41,7 @@ router.get('/', async (req, res) => {
       currentPage: page,
     });
   } catch (error) {
+    console.error('Tasks error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -193,7 +203,7 @@ router.delete('/:id', authMiddleware, authorize('buyer'), async (req, res) => {
 });
 
 // Get top workers
-router.get('/admin/top-workers', async (req, res) => {
+router.get('/top-workers', async (req, res) => {
   try {
     const topWorkers = await User.find({ role: 'worker' })
       .sort('-coins')

@@ -7,7 +7,7 @@ const { authMiddleware } = require('../middleware/auth');
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const { limit = 10 } = req.query;
-
+    
     const notifications = await Notification.find({ toEmail: req.user.email })
       .sort('-createdAt')
       .limit(parseInt(limit));
@@ -19,17 +19,14 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // Get unread notification count
-router.get('/unread/count', authMiddleware, async (req, res) => {
-  try {
-    const unreadCount = await Notification.countDocuments({
-      toEmail: req.user.email,
-      isRead: false,
-    });
-
-    res.json({ unreadCount });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+router.get('/unread/count', async (req, res) => {
+  const email = req.query.email || req.user?.email;
+  if (!email) return res.status(400).json({ unreadCount: 0 });
+  const unreadCount = await Notification.countDocuments({
+    toEmail: email,
+    isRead: { $ne: true }
+  });
+  res.json({ unreadCount });
 });
 
 // Mark notification as read

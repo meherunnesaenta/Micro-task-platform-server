@@ -15,9 +15,24 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
+// Security middleware
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+
+app.use(helmet());
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500
+});
+app.use(limiter);
+
 // Middleware
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:3000'],
+  credentials: true
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.raw({ type: 'application/json' })); // for Stripe webhook
 
 // MongoDB connection
 mongoose
@@ -59,4 +74,4 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+});;

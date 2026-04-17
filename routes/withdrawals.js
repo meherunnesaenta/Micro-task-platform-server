@@ -8,10 +8,13 @@ const { authMiddleware, authorize } = require('../middleware/auth');
 // Create withdrawal request (Worker)
 router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
   try {
-    const { withdrawal_coin, payment_system, account_number } = req.body;
+    console.log('Withdraw body:', req.body);
+    const withdrawal_coin = parseInt(req.body.withdrawal_coin);
+    const payment_system = req.body.payment_system;
+    const account_number = req.body.account_number;
 
-    if (!withdrawal_coin || !payment_system || !account_number) {
-      return res.status(400).json({ error: 'All fields are required' });
+    if (isNaN(withdrawal_coin) || !payment_system || !account_number) {
+      return res.status(400).json({ error: 'All fields are required and coin must be number', received: req.body });
     }
 
     // Minimum 200 coins for withdrawal
@@ -35,6 +38,10 @@ router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
     // Calculate withdrawal amount (20 coins = 1 dollar)
     const withdrawal_amount = withdrawal_coin / 20;
 
+// Deduct coins ONLY on admin approval (status pending = coins stay)
+    // worker.coins -= withdrawal_coin;
+    // await worker.save();
+
     const withdrawal = new Withdrawal({
       worker_email: worker.email,
       worker_name: worker.name,
@@ -47,23 +54,25 @@ router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
 
     await withdrawal.save();
 
-    // Create notification for admin
+    // Notify all admins
     const adminUsers = await User.find({ role: 'admin' });
     for (const admin of adminUsers) {
       const notification = new Notification({
         toEmail: admin.email,
-        message: `New withdrawal request from ${worker.name}: ${withdrawal_coin} coins (${withdrawal_amount}$)`,
+        message: `New withdrawal: ${worker.name} requests ${withdrawal_coin} coins = $${withdrawal_amount}`,
         actionRoute: '/dashboard/admin/withdrawals',
-        type: 'withdrawal',
+        type: 'withdrawal_request',
       });
       await notification.save();
     }
 
     res.status(201).json({
-      message: 'Withdrawal request submitted',
+      message: 'Withdrawal requested, coins deducted. Admin approval pending.',
       withdrawal,
+      remainingCoins: worker.coins,
     });
   } catch (error) {
+    console.error('Withdraw error:', error);
     res.status(500).json({ error: error.message });
   }
 });

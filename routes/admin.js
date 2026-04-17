@@ -12,27 +12,34 @@ router.get('/stats', authMiddleware, authorize('admin'), async (req, res) => {
   try {
     const totalWorkers = await User.countDocuments({ role: 'worker' });
     const totalBuyers = await User.countDocuments({ role: 'buyer' });
-    const totalAdmins = await User.countDocuments({ role: 'admin' });
-
-    // Total available coins
-    const usersWithCoins = await User.find();
-    const totalCoins = usersWithCoins.reduce((sum, user) => sum + user.coins, 0);
-
-    // Total payments
+    const totalCoins = await User.aggregate([
+      { $group: { _id: null, total: { $sum: '$coins' } } }
+    ]);
     const totalPayments = await Payment.aggregate([
       { $match: { status: 'completed' } },
       { $group: { _id: null, total: { $sum: '$price' } } },
     ]);
 
-    const totalPaymentAmount = totalPayments[0]?.total || 0;
-
     res.json({
       totalWorkers,
       totalBuyers,
-      totalAdmins,
-      totalCoins,
-      totalPaymentAmount,
+      totalAdmins: 1, // Usually single admin
+      totalCoins: totalCoins[0]?.total || 0,
+      totalPayments: totalPayments[0]?.total || 0,
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get top workers for home page
+router.get('/top-workers', authMiddleware, async (req, res) => {
+  try {
+    const topWorkers = await User.find({ role: 'worker' })
+      .sort('-coins')
+      .limit(6)
+      .select('name photoURL coins');
+    res.json(topWorkers);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -160,6 +167,58 @@ router.delete('/tasks/:id', authMiddleware, authorize('admin'), async (req, res)
     await Task.findByIdAndDelete(req.params.id);
 
     res.json({ message: 'Task deleted and coins refunded to buyer' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get admin withdrawals
+router.get('/withdrawals', authMiddleware, authorize('admin'), async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
+    const withdrawals = await Withdrawal.find({ status: 'pending' })
+      .populate('worker_id', 'name email photoURL') // Fixed populate worker_id from model
+      .sort('-withdraw_date')
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Withdrawal.countDocuments({ status: 'pending' });
+
+    res.json({
+      withdrawals,
+      total,
+      pages: Math.ceil(total / limit),
+      currentPage: page,
+    });
+  } catch (error) {
+    console.error('Admin withdrawals error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Approve withdrawal
+router.put('/withdrawals/:id/approve', authMiddleware, authorize('admin'), async (req, res) => {
+  try {
+    const withdrawal = await Withdrawal.findById(req.params.id);
+    if (!withdrawal || withdrawal.status !== 'pending') {
+      return res.status(400).json({ error: 'Invalid withdrawal' });
+    }
+
+    withdrawal.status = 'approved';
+    withdrawal.processed_date = new Date();
+    await withdrawal.save();
+
+    // Notify worker
+    const notification = new Notification({
+      toEmail: withdrawal.worker_email,
+      message: `Your withdrawal of $${withdrawal.withdrawal_amount} has been approved and processed!`,
+      actionRoute: '/dashboard/worker-home',
+    });
+    await notification.save();
+
+    res.json({ message: 'Withdrawal approved successfully', withdrawal });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -242,4 +242,58 @@ router.get('/worker/approved', authMiddleware, authorize('worker'), async (req, 
   }
 });
 
+// Get submissions for a specific task
+router.get('/task/:taskId', authMiddleware, async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    
+    // Get the task to verify it exists and user is authorized
+    const task = await Task.findById(taskId);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    // Only the buyer of the task can view its submissions
+    const user = await User.findById(req.user.userId);
+    if (task.buyer_email !== user.email) {
+      return res.status(403).json({ error: 'Not authorized to view submissions for this task' });
+    }
+
+    // Get submissions for this task
+    const submissions = await Submission.find({ task_id: taskId })
+      .sort('-submitted_date');
+
+    res.json({
+      submissions,
+      total: submissions.length,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all submissions
+router.get('/', authMiddleware, authorize('admin'), async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
+    const submissions = await Submission.find()
+      .sort('-submitted_date')
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Submission.countDocuments();
+
+    res.json({
+      submissions,
+      total,
+      pages: Math.ceil(total / limit),
+      currentPage: page,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
