@@ -12,7 +12,7 @@ const withdrawalRoutes = require('./routes/withdrawals');
 const paymentRoutes = require('./routes/payments');
 const notificationRoutes = require('./routes/notifications');
 const adminRoutes = require('./routes/admin');
-
+const publicRoutes = require('./routes/publicRoutes');
 const app = express();
 
 // Security middleware
@@ -28,9 +28,10 @@ app.use(limiter);
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'],
+  origin: ['http://localhost:5173', 'http://localhost:3000','https://microtash.vercel.app'],
   credentials: true
 }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.raw({ type: 'application/json' })); // for Stripe webhook
 
@@ -45,6 +46,7 @@ mongoose
   .catch((err) => console.error('❌ MongoDB connection error:', err));
 
 // API Routes
+app.use('/api', publicRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/submissions', submissionRoutes);

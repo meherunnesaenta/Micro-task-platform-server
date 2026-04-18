@@ -121,9 +121,28 @@ router.post('/dummy-payment', authMiddleware, authorize('buyer'), async (req, re
 // Get payment history
 router.get('/history', authMiddleware, authorize('buyer'), async (req, res) => {
   try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
     const buyer = await User.findById(req.user.userId);
-    const payments = await Payment.find({ buyer_email: buyer.email }).sort('-createdAt');
-    res.json({ payments });
+    const payments = await Payment.find({ buyer_email: buyer.email })
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Payment.countDocuments({ buyer_email: buyer.email });
+    const totalAmount = await Payment.aggregate([
+      { $match: { buyer_email: buyer.email } },
+      { $group: { _id: null, total: { $sum: '$price' } } }
+    ]);
+
+    res.json({
+      payments,
+      currentPage: parseInt(page),
+      pages: Math.ceil(total / limit),
+      total,
+      totalAmount: totalAmount[0]?.total || 0
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
