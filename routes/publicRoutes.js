@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Task = require('../models/Task');
-
+const User = require('../models/User');
 
 // GET /api/public/tasks - Public route (no auth needed)
 router.get('/public/tasks', async (req, res) => {
@@ -66,6 +66,26 @@ router.get('/public/tasks/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch task'
+    });
+  }
+});
+
+router.get('/public/top-workers', async (req, res) => {
+  try {
+    const topWorkers = await User.find({ role: 'worker' })
+      .sort('-coins')
+      .limit(6)
+      .select('name photoURL coins email role');
+
+    res.status(200).json({
+      success: true,
+      workers: topWorkers
+    });
+  } catch (error) {
+    console.error('Error fetching top workers:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch top workers'
     });
   }
 });
