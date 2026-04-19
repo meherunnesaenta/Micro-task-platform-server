@@ -6,25 +6,40 @@ const Notification = require('../models/Notification');
 const { authMiddleware, authorize } = require('../middleware/auth');
 
 // Create withdrawal request (Worker)
+// Create withdrawal request (Worker)
 router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
   try {
     console.log('Withdraw body:', req.body);
-    const withdrawal_coin = parseInt(req.body.withdrawal_coin);
+
+    // ✅ Better parsing
+    let withdrawal_coin = parseInt(req.body.withdrawal_coin);
     const payment_system = req.body.payment_system;
     const account_number = req.body.account_number;
 
-    if (isNaN(withdrawal_coin) || !payment_system || !account_number) {
-      return res.status(400).json({ error: 'All fields are required and coin must be number', received: req.body });
+    // ✅ Check if parsing worked
+    if (isNaN(withdrawal_coin)) {
+      return res.status(400).json({ error: 'Invalid coin amount', received: req.body.withdrawal_coin });
+    }
+
+    console.log('Parsed withdrawal_coin:', withdrawal_coin);
+    console.log('Type:', typeof withdrawal_coin);
+
+    if (!payment_system || !account_number) {
+      return res.status(400).json({ error: 'All fields are required', received: req.body });
     }
 
     // Minimum 200 coins for withdrawal
     if (withdrawal_coin < 200) {
-      return res
-        .status(400)
-        .json({ error: 'Minimum 200 coins required for withdrawal (10 dollars)' });
+      return res.status(400).json({
+        error: `Minimum 200 coins required for withdrawal. You requested ${withdrawal_coin} coins`,
+        minRequired: 200,
+        requested: withdrawal_coin
+      });
     }
 
     const worker = await User.findById(req.user.userId);
+    console.log('Worker coins:', worker.coins);
+    console.log('Requested withdrawal:', withdrawal_coin);
 
     // Check if worker has enough coins
     if (worker.coins < withdrawal_coin) {
@@ -37,10 +52,12 @@ router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
 
     // Calculate withdrawal amount (20 coins = 1 dollar)
     const withdrawal_amount = withdrawal_coin / 20;
+    console.log('Withdrawal amount in USD:', withdrawal_amount);
 
-// Deduct coins ONLY on admin approval (status pending = coins stay)
-    // worker.coins -= withdrawal_coin;
-    // await worker.save();
+    // Deduct coins from worker
+    worker.coins -= withdrawal_coin;
+    await worker.save();
+    console.log('Worker new balance:', worker.coins);
 
     const withdrawal = new Withdrawal({
       worker_email: worker.email,
@@ -53,18 +70,6 @@ router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
     });
 
     await withdrawal.save();
-
-    // Notify all admins
-    const adminUsers = await User.find({ role: 'admin' });
-    for (const admin of adminUsers) {
-      const notification = new Notification({
-        toEmail: admin.email,
-        message: `New withdrawal: ${worker.name} requests ${withdrawal_coin} coins = $${withdrawal_amount}`,
-        actionRoute: '/dashboard/admin/withdrawals',
-        type: 'withdrawal_request',
-      });
-      await notification.save();
-    }
 
     res.status(201).json({
       message: 'Withdrawal requested, coins deducted. Admin approval pending.',
@@ -103,7 +108,7 @@ router.get('/worker/history', authMiddleware, authorize('worker'), async (req, r
 });
 
 // Get all pending withdrawals (Admin)
-router.get('/admin/pending', authMiddleware, authorize('admin'), async (req, res) => {
+router.get('/pending', authMiddleware, authorize('admin'), async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;

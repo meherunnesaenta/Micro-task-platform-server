@@ -2,7 +2,10 @@ const express = require('express');
 const router = express.Router();
 const Task = require('../models/Task');
 const User = require('../models/User');
+
+const Submission = require('../models/Submission');
 const { authMiddleware, authorize } = require('../middleware/auth');
+
 
 
 router.get('/', async (req, res) => {
@@ -13,8 +16,12 @@ router.get('/', async (req, res) => {
     let taskQuery = {
       required_workers: { $gt: 0 },
       status: 'active',
-      completion_date: { $gt: new Date() },
+      // completion_date: { $gt: new Date() }, // Temporarily disabled for testing - re-enable after verifying data flow
     };
+
+    console.log('=== TASK DEBUG ===');
+    console.log('Task Query:', JSON.stringify(taskQuery, null, 2));
+    console.log('Current time:', new Date());
 
     // Exclude tasks worker already submitted
     if (req.user) {
@@ -70,6 +77,9 @@ router.post('/', authMiddleware, authorize('buyer'), async (req, res) => {
       completion_date,
       submission_info,
       task_image_url,
+      buyer_email,
+      buyer_name,
+      buyer_id
     } = req.body;
 
     // Validation
@@ -83,9 +93,13 @@ router.post('/', authMiddleware, authorize('buyer'), async (req, res) => {
     ) {
       return res.status(400).json({ error: 'All fields are required' });
     }
+    if (!buyer_email || !buyer_name) {
+      return res.status(400).json({ error: 'Buyer information missing' });
+    }
+
 
     const buyer = await User.findById(req.user.userId);
-    const totalPayable = required_workers * payable_amount;
+const totalPayable = required_workers * payable_amount * 10;
 
     // Check if buyer has enough coins
     if (buyer.coins < totalPayable) {
@@ -104,7 +118,7 @@ router.post('/', authMiddleware, authorize('buyer'), async (req, res) => {
       completion_date,
       submission_info,
       task_image_url,
-      buyer_email: buyer.email,
+      buyer_email: buyer.email,  
       buyer_name: buyer.name,
       buyer_id: buyer._id,
     });
@@ -128,27 +142,38 @@ router.post('/', authMiddleware, authorize('buyer'), async (req, res) => {
 // Get buyer's tasks
 router.get('/buyer/my-tasks', authMiddleware, authorize('buyer'), async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
-    const skip = (page - 1) * limit;
-
+    console.log('=== BUYER MY TASK DEBUG ===');
+    console.log('User ID from token:', req.user.userId);
+    
+    // Check if user exists
     const buyer = await User.findById(req.user.userId);
-    const tasks = await Task.find({ buyer_email: buyer.email })
-      .sort('-createdAt')
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const total = await Task.countDocuments({ buyer_email: buyer.email });
-
+    console.log('Buyer found:', buyer ? 'Yes' : 'No');
+    console.log('Buyer email:', buyer?.email);
+    
+    // Count all tasks in database
+    const allTasksCount = await Task.countDocuments();
+    console.log('Total tasks in DB:', allTasksCount);
+    
+    // Count tasks for this buyer
+    const buyerTasksCount = await Task.countDocuments({ buyer_id: req.user.userId });
+    console.log('Tasks for this buyer:', buyerTasksCount);
+    
+    // Get tasks
+    const tasks = await Task.find({ buyer_id: req.user.userId });
+    console.log('Tasks found:', tasks.length);
+    
     res.json({
       tasks,
-      total,
-      pages: Math.ceil(total / limit),
-      currentPage: page,
+      total: buyerTasksCount,
+      pages: Math.ceil(buyerTasksCount / 10),
+      currentPage: 1,
     });
   } catch (error) {
+    console.error('Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
+
 
 // Update task (Buyer only)
 router.put('/:id', authMiddleware, authorize('buyer'), async (req, res) => {

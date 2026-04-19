@@ -38,15 +38,30 @@ router.post('/purchase-coins', authMiddleware, authorize('buyer'), async (req, r
     const buyer = await User.findById(req.user.userId);
     if (!buyer) return res.status(404).json({ error: 'User not found' });
 
+    // Save payment record FIRST
+    const payment = new Payment({
+      buyer_email: buyer.email,
+      buyer_name: buyer.name,
+      coin_amount: parseInt(coins),
+      price: parseFloat(amount),
+      transaction_id: `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      status: 'completed',
+      payment_method: 'card',
+    });
+    await payment.save();
+
+    // Then add coins
     buyer.coins += parseInt(coins);
     await buyer.save();
 
     res.json({ 
       success: true,
+      paymentId: payment._id,
       coinsAdded: parseInt(coins),
       newBalance: buyer.coins,
       message: 'Coins added successfully!'
     });
+
   } catch (error) {
     console.error('Purchase error:', error);
     res.status(400).json({ error: error.message });
@@ -93,14 +108,14 @@ router.post('/webhook', express.raw({type: 'application/json'}), async (req, res
 router.post('/dummy-payment', authMiddleware, authorize('buyer'), async (req, res) => {
   try {
     const { coins } = req.body;
-    if (!coinPackages[coins]) return res.status(400).json({ error: 'Invalid package' });
+    const price = coinPackages[coins] || coins / 10;
 
     const buyer = await User.findById(req.user.userId);
     const payment = new Payment({
       buyer_email: buyer.email,
       buyer_name: buyer.name,
       coin_amount: coins,
-      price: coinPackages[coins],
+      price,
       transaction_id: `dummy_${Date.now()}`,
       status: 'completed',
     });
@@ -138,14 +153,16 @@ router.get('/history', authMiddleware, authorize('buyer'), async (req, res) => {
 
     res.json({
       payments,
-      currentPage: parseInt(page),
-      pages: Math.ceil(total / limit),
-      total,
-      totalAmount: totalAmount[0]?.total || 0
+      total: payments.length,
+      totalAmount: totalAmount[0]?.total || 0,
+      currentPage: page,
+      totalPages: Math.ceil(total / limit)
     });
+
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 module.exports = router;
+

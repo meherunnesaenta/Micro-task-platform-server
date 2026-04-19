@@ -12,21 +12,16 @@ router.get('/public/tasks', async (req, res) => {
     const skip = (pageNum - 1) * limitNum;
     const now = new Date();
     
-    const tasks = await Task.find({
-      status: 'active',
-      required_workers: { $gt: 0 },
-      completion_date: { $gte: now }
-    })
+    const tasks = await Task.find({ status: 'active' })
+    .populate('buyer_id', 'name')
     .select('task_title buyer_name payable_amount required_workers completion_date task_image_url task_detail')
+
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limitNum);
 
-    const total = await Task.countDocuments({
-      status: 'active',
-      required_workers: { $gt: 0 },
-      completion_date: { $gte: now }
-    });
+    const total = await Task.countDocuments({ status: 'active' });
+
 
     res.status(200).json({
       success: true,
