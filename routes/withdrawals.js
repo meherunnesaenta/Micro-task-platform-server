@@ -5,59 +5,52 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const { authMiddleware, authorize } = require('../middleware/auth');
 
-// Create withdrawal request (Worker)
-// Create withdrawal request (Worker)
+// Create withdrawal request (Worker) - PENDING coins
 router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
   try {
     console.log('Withdraw body:', req.body);
 
-    // ✅ Better parsing
+    // Better parsing
     let withdrawal_coin = parseInt(req.body.withdrawal_coin);
     const payment_system = req.body.payment_system;
     const account_number = req.body.account_number;
 
-    // ✅ Check if parsing worked
-    if (isNaN(withdrawal_coin)) {
-      return res.status(400).json({ error: 'Invalid coin amount', received: req.body.withdrawal_coin });
+    if (isNaN(withdrawal_coin) || withdrawal_coin <= 0) {
+      return res.status(400).json({ error: 'Invalid coin amount' });
     }
-
-    console.log('Parsed withdrawal_coin:', withdrawal_coin);
-    console.log('Type:', typeof withdrawal_coin);
 
     if (!payment_system || !account_number) {
-      return res.status(400).json({ error: 'All fields are required', received: req.body });
+      return res.status(400).json({ error: 'All fields required' });
     }
 
-    // Minimum 200 coins for withdrawal
+    // Minimum 200 coins
     if (withdrawal_coin < 200) {
-      return res.status(400).json({
-        error: `Minimum 200 coins required for withdrawal. You requested ${withdrawal_coin} coins`,
-        minRequired: 200,
-        requested: withdrawal_coin
+      return res.status(400).json({ 
+        error: 'Minimum 200 coins required',
+        minRequired: 200 
       });
     }
 
     const worker = await User.findById(req.user.userId);
-    console.log('Worker coins:', worker.coins);
-    console.log('Requested withdrawal:', withdrawal_coin);
+    console.log('Worker coins before:', worker.coins);
 
-    // Check if worker has enough coins
     if (worker.coins < withdrawal_coin) {
       return res.status(400).json({
         error: 'Insufficient coins',
         available: worker.coins,
-        required: withdrawal_coin,
+        required: withdrawal_coin
       });
     }
 
-    // Calculate withdrawal amount (20 coins = 1 dollar)
-    const withdrawal_amount = withdrawal_coin / 20;
-    console.log('Withdrawal amount in USD:', withdrawal_amount);
-
-    // Deduct coins from worker
+    // Move coins to pending
+    const pendingCoins = (worker.pending_coins || 0) + withdrawal_coin;
     worker.coins -= withdrawal_coin;
+    worker.pending_coins = pendingCoins;
     await worker.save();
-    console.log('Worker new balance:', worker.coins);
+    console.log('Worker coins:', worker.coins, 'pending:', pendingCoins);
+
+
+    const withdrawal_amount = withdrawal_coin / 20;
 
     const withdrawal = new Withdrawal({
       worker_email: worker.email,
@@ -66,21 +59,23 @@ router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
       withdrawal_amount,
       payment_system,
       account_number,
-      status: 'pending',
+      status: 'pending'
     });
 
     await withdrawal.save();
 
     res.status(201).json({
-      message: 'Withdrawal requested, coins deducted. Admin approval pending.',
+      message: 'Withdrawal requested successfully. Coins moved to pending.',
       withdrawal,
-      remainingCoins: worker.coins,
+      coins: worker.coins,
+      pending_coins: pendingCoins
     });
   } catch (error) {
     console.error('Withdraw error:', error);
     res.status(500).json({ error: error.message });
   }
 });
+
 
 // Get worker's withdrawal history
 router.get('/worker/history', authMiddleware, authorize('worker'), async (req, res) => {
@@ -131,7 +126,7 @@ router.get('/pending', authMiddleware, authorize('admin'), async (req, res) => {
   }
 });
 
-// Approve withdrawal (Admin)
+// Approve withdrawal (Admin) - NO DOUBLE DEDUCTION
 router.put('/:id/approve', authMiddleware, authorize('admin'), async (req, res) => {
   try {
     const withdrawal = await Withdrawal.findById(req.params.id);
@@ -144,34 +139,44 @@ router.put('/:id/approve', authMiddleware, authorize('admin'), async (req, res) 
       return res.status(400).json({ error: 'Withdrawal already processed' });
     }
 
+    // Verify worker still has coins (already deducted at request)
+    const worker = await User.findOne({ email: withdrawal.worker_email });
+    console.log('Worker coins before approve:', worker.coins, 'withdrawal_coin:', withdrawal.withdrawal_coin);
+
+    if (worker.coins < 0) {
+      return res.status(400).json({ error: 'Worker coins negative - transaction invalid' });
+    }
+
     withdrawal.status = 'approved';
     withdrawal.processed_date = new Date();
     await withdrawal.save();
 
-    // Deduct coins from worker
-    const worker = await User.findOne({ email: withdrawal.worker_email });
-    worker.coins -= withdrawal.withdrawal_coin;
-    await worker.save();
+    console.log('Withdrawal approved. Worker coins:', worker.coins);
 
     // Create notification for worker
-    const notification = new Notification({
-      toEmail: withdrawal.worker_email,
-      message: `Your withdrawal request of ${withdrawal.withdrawal_amount}$ (${withdrawal.withdrawal_coin} coins) has been approved!`,
-      actionRoute: '/dashboard/worker-withdrawals',
-      type: 'withdrawal',
-    });
-
-    await notification.save();
+    try {
+      const notification = new Notification({
+        toEmail: withdrawal.worker_email,
+        message: `Your withdrawal request of $${withdrawal.withdrawal_amount} (${withdrawal.withdrawal_coin} coins) has been approved! Funds will be sent to ${withdrawal.payment_system}`,
+        actionRoute: '/dashboard/worker-withdrawals',
+        type: 'withdrawal',
+      });
+      await notification.save();
+    } catch (notifError) {
+      console.log('Notification error (non-critical):', notifError.message);
+    }
 
     res.json({
-      message: 'Withdrawal approved',
+      message: 'Withdrawal approved successfully',
       withdrawal,
-      workerNewBalance: worker.coins,
+      workerCoinsRemaining: worker.coins,
     });
   } catch (error) {
+    console.error('Withdraw approve error:', error);
     res.status(500).json({ error: error.message });
   }
 });
+
 
 // Reject withdrawal (Admin)
 router.put('/:id/reject', authMiddleware, authorize('admin'), async (req, res) => {

@@ -88,7 +88,6 @@ router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
 
     // Create notification for buyer
     try {
-      const Notification = require('../models/Notification');
       const notification = new Notification({
         toEmail: task.buyer_email,
         message: `New submission from ${worker.name} for task "${task.task_title}"`,
@@ -204,21 +203,19 @@ router.put('/:id/approve', authMiddleware, authorize('buyer'), async (req, res) 
     await submission.save();
     console.log('Submission status updated to approved');
 
-    // ✅ Add coins to worker (1 USD = 20 coins)
+    // Add coins to worker (1 USD = 20 coins)
     const worker = await User.findOne({ email: submission.worker_email });
     console.log('Worker found:', worker ? 'Yes' : 'No');
     console.log('Payable amount in USD:', submission.payable_amount);
 
     if (worker) {
-      // ✅ Only add coins, no USD calculation display
+      // Only add coins, no USD calculation display
       const coinsToAdd = submission.payable_amount * 20;
       console.log('Adding coins:', coinsToAdd);
 
       worker.coins += coinsToAdd;
       await worker.save();
-console.log('✅ COINS ONLY - New worker coin balance:', worker.coins);
-// ✅ COINS ONLY - No USD field exists on User model
-      // console.log('Worker new USD value:', worker.coins / 20);
+      console.log('✅ COINS ONLY - New worker coin balance:', worker.coins);
     } else {
       console.log('Worker not found - skipping coin addition');
     }
@@ -233,7 +230,6 @@ console.log('✅ COINS ONLY - New worker coin balance:', worker.coins);
 
     // Create notification
     try {
-      const Notification = require('../models/Notification');
       const notification = new Notification({
         toEmail: submission.worker_email,
         message: `Your submission for "${submission.task_title}" has been approved! You earned ${submission.payable_amount * 20} coins.`,
@@ -245,7 +241,7 @@ console.log('✅ COINS ONLY - New worker coin balance:', worker.coins);
       console.log('Notification error:', notifError.message);
     }
 
-    // ✅ Return only coins added, not USD value
+    // Return only coins added, not USD value
     res.json({
       success: true,
       message: 'Submission approved successfully',
@@ -317,9 +313,9 @@ router.get('/worker/approved', authMiddleware, authorize('worker'), async (req, 
       status: 'approved',
     }).sort('-reviewed_date');
 
-    // ✅ Calculate total earnings in COINS (20 coins = $1)
+    // Calculate total earnings in COINS (20 coins = $1)
     const totalEarningsInCoins = approvedSubmissions.reduce(
-      (sum, sub) => sum + (sub.payable_amount * 20),  // ✅ Convert dollars to coins
+      (sum, sub) => sum + (sub.payable_amount * 20),  // Convert dollars to coins
       0
     );
 
@@ -329,7 +325,7 @@ router.get('/worker/approved', authMiddleware, authorize('worker'), async (req, 
 
     res.json({
       approvedSubmissions,
-      totalEarnings: totalEarningsInCoins,  // ✅ Return COINS
+      totalEarnings: totalEarningsInCoins,  // Return COINS
     });
   } catch (error) {
     console.error('Worker approved error:', error);
@@ -363,32 +359,40 @@ router.get('/task/:taskId', authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ NEW: Get single submission by ID (for WorkerSubmissionDetails)
+// ✅ FIXED: Get single submission by ID (for WorkerSubmissionDetails)
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     console.log('=== SINGLE SUBMISSION DEBUG ===');
     console.log('Submission ID:', req.params.id);
     console.log('User ID from token:', req.user.userId);
 
-    const submission = await Submission.findById(req.params.id)
-      .populate('worker_id', 'name email photoURL')
-      .populate('task_id', 'task_title payable_amount task_detail submission_info');
+    const submission = await Submission.findById(req.params.id);
+    console.log('Raw submission:', submission ? 'Found' : 'Not found');
 
     if (!submission) {
       console.log('Submission not found for ID:', req.params.id);
       return res.status(404).json({ error: 'Submission not found' });
     }
 
-    console.log('Found submission:', submission._id, 'worker_email:', submission.worker_email, 'buyer_email:', submission.buyer_email);
+    // Populate task details only
+    await submission.populate('task_id', 'task_title payable_amount task_detail submission_info');
 
-    // Worker can view own submissions, buyer can view their task submissions
+
+    console.log('Found submission:', submission._id);
+    console.log('Submission emails:', submission.worker_email, submission.buyer_email);
+
+    // Check authorization - worker OR buyer access
     const user = await User.findById(req.user.userId);
-    console.log('User role:', user.role, 'email:', user.email);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
     if (submission.worker_email !== user.email && submission.buyer_email !== user.email) {
-      console.log('Authorization failed - user email:', user.email, 'submission emails:', submission.worker_email, submission.buyer_email);
-      return res.status(403).json({ error: 'Not authorized' });
+      console.log('Auth fail - user:', user.email, 'needed:', submission.worker_email || submission.buyer_email);
+      return res.status(403).json({ error: 'Not authorized to view this submission' });
     }
+
+    console.log('Auth OK - user:', user.email, 'role:', user.role);
 
     res.json({
       submission,
