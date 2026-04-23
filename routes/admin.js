@@ -10,42 +10,42 @@ const { authMiddleware, authorize } = require('../middleware/auth');
 // Get dashboard stats (Admin) - SIMPLIFIED & STABLE - NO AUTH FOR TESTING
 router.get('/stats', async (req, res) => {
   try {
-    console.log('=== FETCHING ADMIN STATS ===');
+
     
     // Total Workers
     const totalWorkers = await User.countDocuments({ role: 'worker' });
-    console.log('Total workers:', totalWorkers);
+
     
     // Total Buyers
     const totalBuyers = await User.countDocuments({ role: 'buyer' });
-    console.log('Total buyers:', totalBuyers);
+
     
     // Total Tasks (all tasks)
     let totalTasks = 0;
     try {
       totalTasks = await Task.countDocuments({});
     } catch (e) {
-      console.log('Task count error:', e.message);
+
       totalTasks = 25; // Demo
     }
-    console.log('Total tasks:', totalTasks);
+
     
     // Total Submissions
     let totalSubmissions = 0;
     try {
       totalSubmissions = await Submission.countDocuments({});
     } catch (e) {
-      console.log('Submission count error:', e.message);
+  
       totalSubmissions = 124;
     }
-    console.log('Total submissions:', totalSubmissions);
+  
     
     // Total Coins in circulation
     const totalCoinsResult = await User.aggregate([
       { $group: { _id: null, total: { $sum: '$coins' } } }
     ]);
     const totalCoins = totalCoinsResult[0]?.total || 1250;
-    console.log('Total coins:', totalCoins);
+    //('Total coins:', totalCoins);
     
     // Platform Revenue from completed payments
     let totalPaymentResult = [];
@@ -55,10 +55,10 @@ router.get('/stats', async (req, res) => {
         { $group: { _id: null, total: { $sum: '$price' } } }
       ]);
     } catch (e) {
-      console.log('Payment aggregation error:', e.message);
+      //('Payment aggregation error:', e.message);
     }
     const totalPaymentAmount = totalPaymentResult[0]?.total || 2548;
-    console.log('Total payment amount:', totalPaymentAmount);
+    //('Total payment amount:', totalPaymentAmount);
     
     // Growth stats
     const platformGrowth = 15.5;
@@ -81,7 +81,7 @@ router.get('/stats', async (req, res) => {
     };
 
     
-    console.log('Final stats response:', response);
+    //('Final stats response:', response);
     res.json(response);
     
   } catch (error) {

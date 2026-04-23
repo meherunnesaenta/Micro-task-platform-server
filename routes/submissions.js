@@ -12,11 +12,6 @@ router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
   try {
     const { task_id, submission_details } = req.body;
 
-    console.log('=== SUBMIT TASK DEBUG ===');
-    console.log('Request body:', req.body);
-    console.log('Task ID:', task_id);
-    console.log('Submission details:', submission_details);
-    console.log('User from token:', req.user);
 
     // Validation
     if (!task_id) {
@@ -38,11 +33,6 @@ router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    console.log('Task details:', {
-      task_title: task.task_title,
-      required_workers: task.required_workers,
-      buyer_email: task.buyer_email
-    });
 
     // Check if task is still active
     if (task.required_workers <= 0) {

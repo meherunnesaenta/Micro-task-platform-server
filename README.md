@@ -341,7 +341,7 @@ curl -X GET http://localhost:5000/api/auth/me \
 
 ### JWT Secret
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+node -e "//(require('crypto').randomBytes(32).toString('hex'))"
 ```
 Add result to JWT_SECRET in .env
 

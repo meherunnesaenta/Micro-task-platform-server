@@ -27,7 +27,7 @@ NODE_ENV=development
 ### JWT_SECRET:
 Generate a strong secret key. You can use:
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+node -e "//(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 ## Installation & Setup

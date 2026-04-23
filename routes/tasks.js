@@ -19,9 +19,9 @@ router.get('/', async (req, res) => {
       // completion_date: { $gt: new Date() }, // Temporarily disabled for testing - re-enable after verifying data flow
     };
 
-    console.log('=== TASK DEBUG ===');
-    console.log('Task Query:', JSON.stringify(taskQuery, null, 2));
-    console.log('Current time:', new Date());
+    //('=== TASK DEBUG ===');
+    //('Task Query:', JSON.stringify(taskQuery, null, 2));
+    //('Current time:', new Date());
 
     // Exclude tasks worker already submitted
     if (req.user) {
@@ -142,25 +142,25 @@ const totalPayable = required_workers * payable_amount * 10;
 // Get buyer's tasks
 router.get('/buyer/my-tasks', authMiddleware, authorize('buyer'), async (req, res) => {
   try {
-    console.log('=== BUYER MY TASK DEBUG ===');
-    console.log('User ID from token:', req.user.userId);
+    //('=== BUYER MY TASK DEBUG ===');
+    //('User ID from token:', req.user.userId);
     
     // Check if user exists
     const buyer = await User.findById(req.user.userId);
-    console.log('Buyer found:', buyer ? 'Yes' : 'No');
-    console.log('Buyer email:', buyer?.email);
+    //('Buyer found:', buyer ? 'Yes' : 'No');
+    //('Buyer email:', buyer?.email);
     
     // Count all tasks in database
     const allTasksCount = await Task.countDocuments();
-    console.log('Total tasks in DB:', allTasksCount);
+    //('Total tasks in DB:', allTasksCount);
     
     // Count tasks for this buyer
     const buyerTasksCount = await Task.countDocuments({ buyer_id: req.user.userId });
-    console.log('Tasks for this buyer:', buyerTasksCount);
+    //('Tasks for this buyer:', buyerTasksCount);
     
     // Get tasks
     const tasks = await Task.find({ buyer_id: req.user.userId });
-    console.log('Tasks found:', tasks.length);
+    //('Tasks found:', tasks.length);
     
     res.json({
       tasks,

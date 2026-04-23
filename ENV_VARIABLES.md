@@ -15,7 +15,7 @@ MONGODB_URI=mongodb+srv://username:password@cluster-name.mongodb.net/database-na
 ```env
 JWT_SECRET=your_super_secret_key_change_this_in_production
 ```
-- Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+- Generate with: `node -e "//(require('crypto').randomBytes(32).toString('hex'))"`
 - NEVER commit this to version control
 - Make it at least 32 characters
 
@@ -51,7 +51,7 @@ STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_key
 ## Verification
 ```bash
 # Test if server reads environment variables correctly
-node -e "require('dotenv').config(); console.log('Port:', process.env.PORT, 'Node Env:', process.env.NODE_ENV)"
+node -e "require('dotenv').config(); //('Port:', process.env.PORT, 'Node Env:', process.env.NODE_ENV)"
 ```
 
 ## Security Notes

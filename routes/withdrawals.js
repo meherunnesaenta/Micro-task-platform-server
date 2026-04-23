@@ -8,7 +8,7 @@ const { authMiddleware, authorize } = require('../middleware/auth');
 // Create withdrawal request (Worker) - PENDING coins
 router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
   try {
-    console.log('Withdraw body:', req.body);
+    //('Withdraw body:', req.body);
 
     // Better parsing
     let withdrawal_coin = parseInt(req.body.withdrawal_coin);
@@ -32,7 +32,7 @@ router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
     }
 
     const worker = await User.findById(req.user.userId);
-    console.log('Worker coins before:', worker.coins);
+    //('Worker coins before:', worker.coins);
 
     if (worker.coins < withdrawal_coin) {
       return res.status(400).json({
@@ -47,7 +47,7 @@ router.post('/', authMiddleware, authorize('worker'), async (req, res) => {
     worker.coins -= withdrawal_coin;
     worker.pending_coins = pendingCoins;
     await worker.save();
-    console.log('Worker coins:', worker.coins, 'pending:', pendingCoins);
+    //('Worker coins:', worker.coins, 'pending:', pendingCoins);
 
 
     const withdrawal_amount = withdrawal_coin / 20;
@@ -141,7 +141,7 @@ router.put('/:id/approve', authMiddleware, authorize('admin'), async (req, res) 
 
     // Verify worker still has coins (already deducted at request)
     const worker = await User.findOne({ email: withdrawal.worker_email });
-    console.log('Worker coins before approve:', worker.coins, 'withdrawal_coin:', withdrawal.withdrawal_coin);
+    //('Worker coins before approve:', worker.coins, 'withdrawal_coin:', withdrawal.withdrawal_coin);
 
     if (worker.coins < 0) {
       return res.status(400).json({ error: 'Worker coins negative - transaction invalid' });
@@ -151,7 +151,7 @@ router.put('/:id/approve', authMiddleware, authorize('admin'), async (req, res) 
     withdrawal.processed_date = new Date();
     await withdrawal.save();
 
-    console.log('Withdrawal approved. Worker coins:', worker.coins);
+    //('Withdrawal approved. Worker coins:', worker.coins);
 
     // Create notification for worker
     try {
@@ -163,7 +163,7 @@ router.put('/:id/approve', authMiddleware, authorize('admin'), async (req, res) 
       });
       await notification.save();
     } catch (notifError) {
-      console.log('Notification error (non-critical):', notifError.message);
+      //('Notification error (non-critical):', notifError.message);
     }
 
     res.json({

@@ -19,7 +19,7 @@ NODE_ENV=development
 
 **Generate JWT_SECRET:**
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+node -e "//(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 ### Step 2: Install Dependencies
@@ -265,7 +265,7 @@ db.users.find({role: "worker"})
 ### View Server Logs
 ```bash
 npm run dev
-# Look for console.log outputs from routes
+# Look for // outputs from routes
 ```
 
 ### Debug Issues

@@ -32,7 +32,6 @@ router.post('/purchase-coins', authMiddleware, authorize('buyer'), async (req, r
   try {
     const { amount, coins, paymentMethodId } = req.body;
 
-    console.log('Payment request:', { amount, coins, paymentMethodId });
 
     // Dummy success (no Stripe key needed)
     const buyer = await User.findById(req.user.userId);
@@ -96,7 +95,7 @@ router.post('/webhook', express.raw({type: 'application/json'}), async (req, res
       if (buyer) {
         buyer.coins += coins;
         await buyer.save();
-        console.log(`Added ${coins} coins to ${buyer.email}`);
+        //(`Added ${coins} coins to ${buyer.email}`);
       }
     }
   }
